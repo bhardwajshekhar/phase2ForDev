@@ -1111,6 +1111,10 @@
         // Global store for Saved Custom Reports
         window.globalSavedCustomReports = [];
 
+        // Persisted configurations from the Admin Report Designer (openJasperReportEdit)
+        // Keyed by report name. Populated when admin clicks Save in the designer.
+        window.reportDesignerConfigs = {};
+
         // AdHoc Keys selected for Minor Category Report panel
         window.minorReportAdHocKeys = [];
         window.adhocPanelExpanded = {};
@@ -2203,7 +2207,7 @@
                             <button onclick="window.renderJasperReportSummary()"
                                 style="padding:6px 18px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-weight:600;color:#64748b;background:#fff;cursor:pointer;"
                                 onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">Back</button>
-                            <button style="display:inline-flex;align-items:center;gap:5px;padding:6px 18px;border:none;border-radius:6px;font-size:12px;font-weight:600;color:#fff;background:#22c55e;cursor:pointer;"
+                            <button data-save-btn onclick="window._jrSaveConfig()" style="display:inline-flex;align-items:center;gap:5px;padding:6px 18px;border:none;border-radius:6px;font-size:12px;font-weight:600;color:#fff;background:#22c55e;cursor:pointer;"
                                 onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                                 Save
@@ -2296,6 +2300,26 @@
             arr.splice(toIdx, 0, item);
             window._jrDrag = null;
             window._jrRender();
+        };
+
+        /* ── Save designer config so the user-facing report can reflect it ── */
+        window._jrSaveConfig = function() {
+            const s = window._jrState;
+            window.reportDesignerConfigs[s.name] = {
+                isGroupByReport: s.isGroupByReport,
+                isGroupByCrossTab: s.isGroupByCrossTab,
+                groupingColumns: [...s.groupingColumns],
+                crossTabRows: [...s.crossTabRows],
+                crossTabCols: [...s.crossTabCols]
+            };
+            // Brief visual feedback on the Save button
+            const btn = document.querySelector('button[data-save-btn]');
+            if (btn) {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Saved!';
+                btn.style.background = '#16a34a';
+                setTimeout(() => { btn.innerHTML = orig; btn.style.background = '#22c55e'; }, 1800);
+            }
         };
 
         /* ─────────────────────────────────────────────────────────── */
@@ -4730,7 +4754,33 @@ window.openCustomReportDesigner = function() {
             secondaryNav.classList.remove('hidden');
             secondaryNav.classList.add('flex');
             mainContent.className = 'flex-1 flex flex-col bg-bg-light overflow-hidden p-0';
-            
+
+            // Read the admin designer config saved for this report
+            const _rpCfg = window.reportDesignerConfigs[reportName] || {};
+            const _rpIsGroupByOnly    = !!_rpCfg.isGroupByReport;
+            const _rpIsGroupByCrossTab = !!_rpCfg.isGroupByCrossTab;
+            const _rpShowRadio        = !_rpIsGroupByOnly; // hidden only for "Is Group By Report"; shown for normal AND "Is Group By & Cross Tab Report"
+            const _rpCrossTabDisplay  = _rpIsGroupByCrossTab ? 'block' : 'none';
+            const _rpRadioHtml = _rpShowRadio ? `
+                                    <div>
+                                        <div class="vis-title">Report Format</div>
+                                        <div class="vis-radio-group">
+                                            <label class="vis-radio-label">
+                                                <input type="radio" name="reportCategory" value="groupby" ${!_rpIsGroupByCrossTab ? 'checked' : ''} onchange="window.toggleReportLayout(this.value)"> Group By
+                                            </label>
+                                            <label class="vis-radio-label">
+                                                <input type="radio" name="reportCategory" value="crosstab" ${_rpIsGroupByCrossTab ? 'checked' : ''} onchange="window.toggleReportLayout(this.value)"> Cross Tab Reports
+                                            </label>
+                                        </div>
+                                    </div>` : '';
+
+            // Panel header badge for the active mode
+            const _rpModeBadge = _rpIsGroupByOnly
+                ? `<span class="text-[9px] font-bold uppercase tracking-wider bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Group By</span>`
+                : _rpIsGroupByCrossTab
+                    ? `<span class="text-[9px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Group By &amp; Cross Tab</span>`
+                    : '';
+
             mainContent.innerHTML = `
                 <div class="h-[60px] bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-10 shadow-sm w-full">
                     <div class="flex items-center gap-4 text-[13px]">
@@ -4895,52 +4945,43 @@ window.openCustomReportDesigner = function() {
                                 
                                 <div class="p-4 bg-white border-t border-slate-200 flex flex-col gap-2 shrink-0">
                                     <div class="flex gap-2">
-                                        <button class="flex-1 bg-red-50 text-red-600 border border-red-200 font-bold text-[11px] py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors hover:bg-red-100" onclick="window.generateReport()">
+                                        <button class="flex-1 bg-red-50 text-red-600 border border-red-200 font-bold text-[11px] py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors hover:bg-red-100" onclick="window.generateFlatReport()">
                                             <i class="ph-fill ph-file-pdf text-sm"></i> RUN PDF
                                         </button>
-                                        <button class="flex-1 bg-green-50 text-green-600 border border-green-200 font-bold text-[11px] py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors hover:bg-green-100" onclick="window.generateReport()">
+                                        <button class="flex-1 bg-green-50 text-green-600 border border-green-200 font-bold text-[11px] py-2 px-3 rounded shadow-sm flex items-center justify-center gap-1 transition-colors hover:bg-green-100" onclick="window.generateFlatReport()">
                                             <i class="ph-fill ph-file-xls text-sm"></i> RUN EXCEL
                                         </button>
                                     </div>
                                 </div>
-                                
+
                             </div>
 
                             <div id="visualization-sidebar-content" class="w-[320px] hidden flex-col h-full shrink-0">
                                 <div class="px-4 py-3 border-b border-slate-200 font-bold text-slate-800 text-[13px] bg-slate-50 flex items-center justify-between">
-                                    Report Designer
+                                    <span>Report Designer</span>
+                                    ${_rpModeBadge}
                                 </div>
                                 <div class="flex-1 overflow-y-auto p-4 space-y-5 bg-white">
-                                    <div>
-                                        <div class="vis-title">Report Format</div>
-                                        <div class="vis-radio-group">
-                                            <label class="vis-radio-label">
-                                                <input type="radio" name="reportCategory" value="groupby" checked onchange="window.toggleReportLayout(this.value)"> Group By
-                                            </label>
-                                            <label class="vis-radio-label">
-                                                <input type="radio" name="reportCategory" value="crosstab" onchange="window.toggleReportLayout(this.value)"> Cross Tab Reports
-                                            </label>
-                                        </div>
-                                    </div>
+                                    ${_rpRadioHtml}
 
                                     <div>
                                         <div class="vis-title">Available Dimensions (Details)</div>
                                         <div class="vis-grid" id="dimGrid"></div>
                                     </div>
 
-                                    <div id="visGroupBy">
+                                    <div id="visGroupBy" style="display: ${_rpIsGroupByCrossTab ? 'none' : 'block'};">
                                         <div class="vis-title">Group By Hierarchy</div>
                                         <div class="vis-dropzone crosstab-zone" id="dz-groupby">
                                             <span class="placeholder-text text-[12px]" style="color: var(--accent-color);">Stack dimensions here...</span>
                                         </div>
                                     </div>
 
-                                    <div id="visRows" style="display: none;">
+                                    <div id="visRows" style="display: ${_rpCrossTabDisplay};">
                                         <div class="vis-title">Rows</div>
                                         <div class="vis-dropzone crosstab-zone" id="dz-rows"><span class="placeholder-text text-[12px]" style="color: var(--accent-color);">Drag dimensions here...</span></div>
                                     </div>
 
-                                    <div id="visColumns" style="display: none;">
+                                    <div id="visColumns" style="display: ${_rpCrossTabDisplay};">
                                         <div class="vis-title">Columns</div>
                                         <div class="vis-dropzone crosstab-zone" id="dz-cols"><span class="placeholder-text text-[12px]" style="color: var(--accent-color);">Drag dimensions here...</span></div>
                                     </div>
@@ -5605,6 +5646,34 @@ window.openCustomReportDesigner = function() {
             });
 
 window.updateVisualizationPills();
+
+            // Pre-populate dropzones from saved admin designer config
+            const _visCfg = window.reportDesignerConfigs[window.currentActiveReportName];
+            if (_visCfg) {
+                const populateZone = (zoneId, columns) => {
+                    if (!columns || !columns.length) return;
+                    const zone = document.getElementById(zoneId);
+                    if (!zone) return;
+                    const ph = zone.querySelector('.placeholder-text');
+                    let anyAdded = false;
+                    columns.forEach(colName => {
+                        const colDef = colDefs.find(c => c.type === 'dimension' && c.label === colName);
+                        if (!colDef) return;
+                        const pill = dimGrid.querySelector(`.vis-pill[data-id="${colDef.id}"]`);
+                        if (pill && pill.parentNode === dimGrid) {
+                            zone.appendChild(pill);
+                            const acts = pill.querySelector('.pill-actions');
+                            if (acts) acts.style.display = 'flex';
+                            anyAdded = true;
+                        }
+                    });
+                    if (ph) ph.style.display = anyAdded ? 'none' : 'block';
+                };
+                populateZone('dz-groupby', _visCfg.groupingColumns);
+                populateZone('dz-rows',    _visCfg.crossTabRows);
+                populateZone('dz-cols',    _visCfg.crossTabCols);
+            }
+
             document.querySelectorAll('.vis-dropzone, #dimGrid').forEach(zone => {
                 zone.addEventListener('dragover', e => {
                     e.preventDefault(); 
@@ -5672,20 +5741,31 @@ window.updateVisualizationPills();
         };
 
         window.toggleReportLayout = function(type) {
-            document.querySelectorAll('.vis-dropzone .vis-pill').forEach(pill => {
-                document.getElementById('dimGrid').appendChild(pill);
-                pill.querySelector('.pill-actions').style.display = 'none';
-            });
-            document.querySelectorAll('.vis-dropzone .placeholder-text').forEach(ph => ph.style.display = 'block');
-            
-            document.getElementById('visGroupBy').style.display = type === 'groupby' ? 'block' : 'none';
-            document.getElementById('visRows').style.display = type === 'groupby' ? 'none' : 'block';
-            document.getElementById('visColumns').style.display = type === 'groupby' ? 'none' : 'block';
-            
+            const _tlCfg = window.reportDesignerConfigs[window.currentActiveReportName];
+
+            if (_tlCfg && _tlCfg.isGroupByCrossTab) {
+                // Group By & Cross Tab mode: only toggle section visibility,
+                // do NOT move pills back to dimGrid — pre-populated data persists
+                document.getElementById('visGroupBy').style.display = type === 'groupby' ? 'block' : 'none';
+                document.getElementById('visRows').style.display    = type === 'groupby' ? 'none'  : 'block';
+                document.getElementById('visColumns').style.display = type === 'groupby' ? 'none'  : 'block';
+            } else {
+                // Normal mode: clear all dropzones when switching layout
+                document.querySelectorAll('.vis-dropzone .vis-pill').forEach(pill => {
+                    document.getElementById('dimGrid').appendChild(pill);
+                    pill.querySelector('.pill-actions').style.display = 'none';
+                });
+                document.querySelectorAll('.vis-dropzone .placeholder-text').forEach(ph => ph.style.display = 'block');
+
+                document.getElementById('visGroupBy').style.display = type === 'groupby' ? 'block' : 'none';
+                document.getElementById('visRows').style.display    = type === 'groupby' ? 'none'  : 'block';
+                document.getElementById('visColumns').style.display = type === 'groupby' ? 'none'  : 'block';
+            }
+
             document.getElementById('vis-empty-state').classList.replace('hidden', 'flex');
             document.getElementById('vis-report-container').classList.replace('flex', 'hidden');
             document.getElementById('tableContainer').innerHTML = '';
-            
+
             window.updateTopBarFilters();
         };
 
@@ -5770,12 +5850,22 @@ window.getFilteredData = function() {
                 defCanvas.classList.add('hidden');
             }
 
-            const type = document.querySelector('input[name="reportCategory"]:checked').value;
+            // Determine report mode: forced to 'groupby' for "Is Group By Report",
+            // otherwise read the radio (normal AND "Is Group By & Cross Tab Report")
+            const _genCfg = window.reportDesignerConfigs[window.currentActiveReportName];
+            let type;
+            if (_genCfg && _genCfg.isGroupByReport) {
+                type = 'groupby';
+            } else {
+                const checkedRadio = document.querySelector('input[name="reportCategory"]:checked');
+                type = checkedRadio ? checkedRadio.value : 'groupby';
+            }
+
             let measures = Array.from(document.querySelectorAll('#measureGrid input:checked')).map(cb => colDefs.find(c => c.id === cb.value).label);
-            
+
             // Only keep measures that are selected in Data Columns
             measures = measures.filter(m => window.designerState.columns.includes(m));
-            
+
             if (!measures.length) {
                 document.getElementById('vis-empty-state').classList.remove('flex');
                 document.getElementById('vis-empty-state').classList.add('hidden');
@@ -5788,7 +5878,7 @@ window.getFilteredData = function() {
             const filteredData = window.getFilteredData();
 
             let html = '';
-            
+
             if (type === 'groupby') {
                 let rowDims = Array.from(document.querySelectorAll('#visGroupBy .vis-pill')).map(p => colDefs.find(c => c.id === p.dataset.id).label);
                 rowDims = rowDims.filter(d => window.designerState.columns.includes(d));
@@ -5799,7 +5889,7 @@ window.getFilteredData = function() {
                 document.querySelectorAll('#visGroupBy .vis-pill').forEach(p => {
                     const label = colDefs.find(c => c.id === p.dataset.id).label;
                     if(window.designerState.columns.includes(label)) {
-                        subtotalConfig[label] = p.dataset.subtotal; 
+                        subtotalConfig[label] = p.dataset.subtotal;
                     }
                 });
                 html = window.buildDynamicMatrix(rowDims, detailDims, measures, subtotalConfig, filteredData);
@@ -5825,6 +5915,54 @@ window.getFilteredData = function() {
             document.getElementById('vis-report-container').classList.remove('hidden');
             document.getElementById('vis-report-container').classList.add('flex');
             
+            document.getElementById('tableContainer').innerHTML = html;
+        };
+
+        // Generates a simple flat table from the Filters tab — no Group By / Cross Tab required
+        window.generateFlatReport = function() {
+            if (typeof isVisInitialized !== 'undefined' && !isVisInitialized) {
+                window.initVisualization();
+                isVisInitialized = true;
+            }
+            const defCanvas = document.getElementById('default-canvas-state');
+            if (defCanvas) { defCanvas.classList.remove('flex'); defCanvas.classList.add('hidden'); }
+
+            const allCols = window.designerState.columns || [];
+            if (!allCols.length) {
+                document.getElementById('vis-empty-state').classList.replace('hidden', 'flex');
+                return;
+            }
+
+            const filteredData = window.getFilteredData();
+            const dimLabels = colDefs.filter(c => c.type === 'dimension').map(c => c.label);
+            const sizeClass = getTableSizingClass(allCols.length);
+
+            let html = `<table class="report-table${sizeClass}"><thead><tr>`;
+            allCols.forEach(col => { html += `<th>${col}</th>`; });
+            html += '</tr></thead><tbody>';
+
+            if (filteredData.length === 0) {
+                html += `<tr><td colspan="${allCols.length}" style="text-align:center;color:#94a3b8;padding:16px;font-style:italic;">No data for selected filters.</td></tr>`;
+            } else {
+                filteredData.forEach(row => {
+                    html += '<tr>';
+                    allCols.forEach(col => {
+                        const val = row[col];
+                        if (typeof val === 'number') {
+                            html += `<td style="text-align:right;">${col.includes('Quantity') ? fmtNum(val) : fmtCur(val)}</td>`;
+                        } else {
+                            html += `<td>${val !== undefined ? val : ''}</td>`;
+                        }
+                    });
+                    html += '</tr>';
+                });
+            }
+            html += '</tbody></table>';
+
+            document.getElementById('vis-empty-state').classList.remove('flex');
+            document.getElementById('vis-empty-state').classList.add('hidden');
+            document.getElementById('vis-report-container').classList.remove('hidden');
+            document.getElementById('vis-report-container').classList.add('flex');
             document.getElementById('tableContainer').innerHTML = html;
         };
 
