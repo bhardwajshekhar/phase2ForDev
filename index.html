@@ -2239,11 +2239,11 @@
             const groupByKeys = ['isGroupByReport', 'isGroupByCrossTab'];
             /* ── Mutual-exclusivity guard: Enable Versioning vs Group By flags ── */
             if (key === 'enableVersioning' && !s.enableVersioning && (s.isGroupByReport || s.isGroupByCrossTab)) {
-                window._jrShowConflictPopup('Please disable <b>Is Group By Report</b> and <b>Is Group By &amp; Cross Tab Report</b> before enabling <b>Enable Versioning</b>.');
+                window._jrShowConflictPopup('Please disable <b>Is Group By Report</b> Or <b>Is Group By &amp; Cross Tab Report</b> flag before <b>Enabling Versioning</b>.');
                 return;
             }
             if (groupByKeys.includes(key) && !s[key] && s.enableVersioning) {
-                window._jrShowConflictPopup('Please disable <b>Enable Versioning</b> before enabling this flag.');
+                window._jrShowConflictPopup('Please disable <b>Versioning</b> before enabling this flag.');
                 return;
             }
             s[key] = !s[key];
